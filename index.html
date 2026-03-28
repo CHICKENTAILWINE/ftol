@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>废土小黑屋 · 广域探索 | 武器系统 + 建筑连续战斗</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            background: #0a0c12;
+            font-family: 'Courier New', 'Fira Code', monospace;
+            padding: 20px;
+            color: #e9e2c7;
+        }
+
+        .game-container {
+            max-width: 1500px;
+            margin: 0 auto;
+            background: #1e1b15e0;
+            backdrop-filter: blur(3px);
+            border-radius: 2rem;
+            border: 1px solid #b87a3b;
+            padding: 1.5rem;
+            box-shadow: 0 10px 30px black;
+        }
+
+        .dashboard {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.5rem;
+        }
+
+        .map-panel {
+            flex: 2;
+            min-width: 360px;
+            background: #0c0e0a;
+            border-radius: 1.5rem;
+            padding: 1rem;
+            border: 1px solid #6a4e2a;
+        }
+
+        canvas {
+            display: block;
+            margin: 0 auto;
+            background: #1e2a1a;
+            border-radius: 1rem;
+            box-shadow: 0 0 0 2px #3c2a1a;
+            cursor: pointer;
+            width: 100%;
+            height: auto;
+        }
+
+        .info-panel {
+            flex: 3;
+            min-width: 380px;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .stats-grid {
+            background: #15100a;
+            border-radius: 1rem;
+            padding: 0.8rem;
+            border-left: 6px solid #e09d42;
+        }
+
+        .resource-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+            gap: 6px 12px;
+            background: #1e1912;
+            border-radius: 1rem;
+            padding: 0.8rem;
+            margin-top: 5px;
+        }
+
+        .res-item {
+            font-size: 0.8rem;
+            background: #2c241a;
+            padding: 4px 8px;
+            border-radius: 20px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .weapon-panel {
+            background: #100e0a;
+            border-radius: 1rem;
+            padding: 0.6rem;
+        }
+
+        .weapon-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 5px;
+        }
+
+        .weapon-item {
+            background: #2c241a;
+            border-radius: 20px;
+            padding: 4px 8px;
+            font-size: 0.7rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .facility-list {
+            background: #100e0a;
+            border-radius: 1rem;
+            padding: 0.6rem;
+            max-height: 220px;
+            overflow-y: auto;
+        }
+
+        .facility-item {
+            background: #231f18;
+            margin: 4px 0;
+            padding: 6px 8px;
+            border-radius: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            font-size: 0.75rem;
+        }
+
+        button {
+            background: #4f351d;
+            border: none;
+            font-family: monospace;
+            font-weight: bold;
+            color: #ffecb3;
+            padding: 4px 10px;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: 0.1s;
+            font-size: 0.7rem;
+        }
+
+        button:hover {
+            background: #7e5a34;
+            transform: scale(0.96);
+        }
+
+        .combat-zone {
+            background: #271f14;
+            border-radius: 1rem;
+            padding: 8px;
+            margin: 5px 0;
+        }
+
+        .log-box {
+            background: #050302aa;
+            border-radius: 1rem;
+            height: 160px;
+            overflow-y: auto;
+            padding: 6px;
+            font-size: 0.7rem;
+            font-family: monospace;
+        }
+
+        .log-entry {
+            border-bottom: 1px solid #6a4a2a33;
+            padding: 3px 0;
+            color: #dbc28b;
+        }
+
+        .danger { color: #ff8866; }
+        .good { color: #a5d6a5; }
+        .flex-between { display: flex; justify-content: space-between; align-items: center; }
+        .hp-bar { background: #4a2a1a; height: 8px; border-radius: 10px; overflow: hidden; margin: 4px 0; }
+        .hp-fill { background: #d95b2a; width: 100%; height: 100%; }
+        .legend { font-size: 10px; margin-top: 6px; text-align: center; color: #aa9466; }
+    </style>
+</head>
+<body>
+<div class="game-container">
+    <div class="dashboard">
+        <div class="map-panel">
+            <canvas id="mapCanvas" width="600" height="600"></canvas>
+            <div class="legend">🗺️ @=玩家 | 字母=怪物 | 🏚️🏛️🏭等=特殊建筑 | 点击相邻格子移动 | 建筑可能触发连续战斗</div>
+        </div>
+
+        <div class="info-panel">
+            <div class="stats-grid">
+                <div class="flex-between"><span>❤️ 生命</span><span id="hpText">35/35</span></div>
+                <div class="hp-bar"><div class="hp-fill" id="hpFill" style="width:100%"></div></div>
+                <div class="flex-between"><span>⚔️ 基础攻击</span><span id="baseAtk">8</span> &nbsp; 🗡️ 总攻击 <span id="totalAtk">8</span> &nbsp; 🛡️ 防御 <span id="defVal">2</span></div>
+                <div class="flex-between"><span>👥 游民数</span><span id="settlerCount">0</span> &nbsp; 🕒 时间: <span id="timeHour">0</span> 小时</div>
+                <div class="flex-between"><span>🏠 设施数量</span><span id="facilityCount">0</span> &nbsp; 📍 [<span id="coordX">0</span>,<span id="coordY">0</span>]</div>
+            </div>
+
+            <div><strong>📦 废土物资</strong></div>
+            <div class="resource-grid" id="resourcePanel"></div>
+
+            <!-- 武器系统面板 -->
+            <div class="weapon-panel">
+                <div class="flex-between"><strong>⚔️ 武器库</strong><button id="craftWeaponBtn">🔨 制作武器</button></div>
+                <div id="weaponList" class="weapon-list"></div>
+                <div id="weaponInfo" style="font-size: 10px; margin-top: 4px;">装备武器可提升攻击力，部分有特效</div>
+            </div>
+
+            <div class="combat-zone" id="combatZone">
+                <div>⚔️ 战斗状态</div>
+                <div id="combatInfo">未进入战斗</div>
+                <button id="attackBtn" disabled>💢 攻击</button>
+                <button id="fleeBtn" disabled>🏃 逃跑</button>
+            </div>
+
+            <div style="display: flex; gap: 8px;">
+                <button id="recruitBtn">👥 招募游民 (食物20+水15)</button>
+                <button id="nextTurnBtn">⏩ 等待8小时 (触发事件)</button>
+            </div>
+
+            <div><strong>🏗️ 基地设施 (点击建造)</strong></div>
+            <div class="facility-list" id="facilityList"></div>
+
+            <div class="log-box" id="logPanel">
+                <div class="log-entry">☢️ 废土生存手册 · 武器系统 + 建筑连续战斗</div>
+                <div class="log-entry">🗡️ 制作武器增强战力，探索建筑可能触发多波战斗！</div>
+            </div>
+            <button id="resetBtn" style="background:#631e1e;">💀 重启废土</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ========================= 游戏核心 =========================
+    const MAP_SIZE = 30;
+    const CANVAS_SIZE = 600;
+    const CELL_SIZE = CANVAS_SIZE / MAP_SIZE;
+
+    // 资源列表
+    const RESOURCES = ["食物","水","废金属","木头","布料","电子元件","化学品","燃油","药品","弹药","混凝土","玻璃"];
+
+    // 怪物库 (12种)
+    const MONSTER_DB = [
+        { name: "变种蟑螂", code: "C", hp: 12, atk: 4, def: 1, drops: { "食物": [1,3], "化学品": [1,2] } },
+        { name: "辐射僵尸", code: "Z", hp: 18, atk: 6, def: 2, drops: { "布料": [1,3], "药品": [0,1] } },
+        { name: "废土掠夺者", code: "R", hp: 20, atk: 8, def: 3, drops: { "弹药": [1,4], "废金属": [2,5] } },
+        { name: "变异巨鼠", code: "M", hp: 10, atk: 5, def: 0, drops: { "食物": [1,2], "布料": [1,2] } },
+        { name: "焦油怪", code: "T", hp: 25, atk: 7, def: 4, drops: { "燃油": [2,5], "化学品": [1,3] } },
+        { name: "电子幽灵", code: "E", hp: 15, atk: 9, def: 1, drops: { "电子元件": [2,5], "玻璃": [1,2] } },
+        { name: "铁甲蝎", code: "S", hp: 28, atk: 10, def: 5, drops: { "废金属": [3,7], "化学品": [1,2] } },
+        { name: "变异树人", code: "W", hp: 32, atk: 6, def: 6, drops: { "木头": [4,8], "药品": [1,2] } },
+        { name: "疯狂科学家", code: "D", hp: 22, atk: 12, def: 2, drops: { "电子元件": [2,4], "化学品": [2,4], "药品": [1,3] } },
+        { name: "巨化蠕虫", code: "G", hp: 40, atk: 11, def: 3, drops: { "混凝土": [2,5], "食物": [2,5] } },
+        { name: "辐射幽灵", code: "F", hp: 18, atk: 9, def: 2, drops: { "药品": [1,3], "玻璃": [1,2] } },
+        { name: "废土巨熊", code: "B", hp: 45, atk: 13, def: 4, drops: { "食物": [4,8], "皮革": [2,4], "废金属": [3,6] } } // 额外
+    ];
+    // 修正皮革资源不存在，改为废金属
+    for(let m of MONSTER_DB) if(m.drops["皮革"]) delete m.drops["皮革"];
+
+    // 武器库 (可制作)
+    const WEAPONS = [
+        { id: "rusted_sword", name: "🔪 生锈砍刀", atkBonus: 3, cost: { "废金属": 8, "木头": 5 }, desc: "基础近战" },
+        { id: "pipe_rifle", name: "🔫 土制步枪", atkBonus: 5, cost: { "废金属": 15, "电子元件": 3, "弹药": 5 }, desc: "远程射击" },
+        { id: "energy_blade", name: "⚡ 能量刃", atkBonus: 8, cost: { "电子元件": 12, "化学品": 8, "玻璃": 5 }, desc: "高能切割" },
+        { id: "heavy_hammer", name: "🔨 动力锤", atkBonus: 10, cost: { "废金属": 25, "混凝土": 6, "燃油": 4 }, desc: "重击破甲" },
+        { id: "plasma_gun", name: "💥 等离子枪", atkBonus: 12, cost: { "电子元件": 20, "化学品": 15, "弹药": 12 }, desc: "能量爆发" }
+    ];
+
+    // 设施 (22种，简化但保留核心)
+    const FACILITIES = [
+        { id: "tent", name: "⛺ 帐篷", cost: { "木头": 10, "布料": 5 }, effect: "maxHp+5, 每8h产食物+2", built: false },
+        { id: "farm", name: "🌾 农田", cost: { "木头": 15, "水": 8, "食物": 5 }, effect: "每8h产食物+5", built: false },
+        { id: "well", name: "💧 水井", cost: { "木头": 12, "废金属": 8 }, effect: "每8h产水+4", built: false },
+        { id: "workshop", name: "🔧 工坊", cost: { "废金属": 20, "木头": 10 }, effect: "武器制作消耗-10%", built: false },
+        { id: "infirmary", name: "🏥 医疗站", cost: { "药品": 5, "废金属": 15, "布料": 10 }, effect: "每8h回复2hp", built: false },
+        { id: "guardpost", name: "🗼 哨塔", cost: { "木头": 20, "废金属": 15 }, effect: "防御+2", built: false },
+        { id: "barracks", name: "⚔️ 兵营", cost: { "废金属": 30, "弹药": 8, "食物": 15 }, effect: "游民战斗力+2", built: false },
+        { id: "recycler", name: "♻️ 熔炉", cost: { "废金属": 25, "燃油": 5 }, effect: "每8h产废金属+3", built: false },
+        { id: "laboratory", name: "🔬 研究室", cost: { "电子元件": 15, "化学品": 10, "玻璃": 8 }, effect: "攻击+2, 每12h产化学品+2", built: false },
+        { id: "armory", name: "🏹 军械库", cost: { "废金属": 35, "弹药": 12 }, effect: "武器攻击加成+2", built: false },
+        { id: "shelter", name: "🏚️ 大庇所", cost: { "木头": 30, "混凝土": 15 }, effect: "最大生命+10", built: false },
+        { id: "greenhouse", name: "🌿 温室", cost: { "玻璃": 12, "水": 12, "化学品": 5 }, effect: "每8h产食物+6, 药品+1", built: false },
+        { id: "scrap_mine", name: "⛏️ 废料矿场", cost: { "木头": 25, "混凝土": 8 }, effect: "每8h产废金属+5", built: false },
+        { id: "chem_lab", name: "🧪 化学实验室", cost: { "化学品": 12, "玻璃": 8 }, effect: "每8h产化学品+3, 弹药+1", built: false },
+        { id: "radio_tower", name: "📡 广播塔", cost: { "电子元件": 20, "废金属": 25 }, effect: "吸引游民几率上升", built: false },
+        { id: "defense_turret", name: "🔫 自动炮台", cost: { "废金属": 45, "弹药": 15, "电子元件": 10 }, effect: "战斗开场对怪物造成8伤害", built: false },
+        { id: "hospital", name: "🏨 大医院", cost: { "药品": 20, "混凝土": 20, "电子元件": 10 }, effect: "每8h回复全体5hp", built: false },
+        { id: "factory", name: "🏭 制造厂", cost: { "废金属": 55, "混凝土": 25, "燃油": 15 }, effect: "所有基础资源产出+25%", built: false }
+    ];
+
+    // 随机建筑 (10+种，部分触发连续战斗)
+    const BUILDINGS = [
+        { name: "🏚️ 废弃小屋", symbol: "🏚️", combatWaves: 0, reward: (p) => { p.addResource("食物", 6); p.addResource("废金属", 4); p.addLog("废弃小屋中找到一些物资。", true); } },
+        { name: "🏛️ 坍塌神殿", symbol: "🏛️", combatWaves: 0, reward: (p) => { p.addResource("电子元件", 5); p.addResource("玻璃", 4); p.addLog("神殿中发现古代科技。", true); } },
+        { name: "🏭 废旧工厂", symbol: "🏭", combatWaves: 0, reward: (p) => { p.addResource("废金属", 10); p.addResource("燃油", 4); p.addLog("工厂内找到大量零件。", true); } },
+        { name: "🏥 野战医院", symbol: "🏥", combatWaves: 0, reward: (p) => { p.addResource("药品", 4); p.player.hp = Math.min(p.player.maxHp, p.player.hp+15); p.addLog("医疗物资恢复了生命！", true); } },
+        { name: "⚙️ 机械坟场", symbol: "⚙️", combatWaves: 0, reward: (p) => { p.addResource("废金属", 8); p.addResource("电子元件", 3); p.addLog("拾荒到机械零件。", true); } },
+        { name: "🕳️ 变异巢穴", symbol: "🕳️", combatWaves: 2, desc: "连续战斗2波", reward: (p) => { p.addResource("化学品", 6); p.addResource("药品", 3); p.addLog("巢穴深处发现变异样本和药品！", true); } },
+        { name: "🔫 军火库废墟", symbol: "🔫", combatWaves: 3, desc: "连续战斗3波", reward: (p) => { p.addResource("弹药", 12); p.addResource("废金属", 10); p.addLog("获得大量弹药和武器零件！", true); } },
+        { name: "🧪 生化实验室", symbol: "🧪", combatWaves: 2, desc: "连续战斗2波", reward: (p) => { p.addResource("化学品", 8); p.addResource("药品", 5); p.addLog("实验室残留药剂。", true); } },
+        { name: "🏰 掠夺者营地", symbol: "🏰", combatWaves: 3, desc: "连续战斗3波", reward: (p) => { p.addResource("食物", 10); p.addResource("弹药", 6); p.addLog("击败掠夺者获得补给！", true); } },
+        { name: "💀 辐射禁区", symbol: "💀", combatWaves: 4, desc: "连续战斗4波", reward: (p) => { p.addResource("电子元件", 8); p.addResource("玻璃", 6); p.addResource("燃油", 8); p.addLog("禁区中获得了稀有材料！", true); } },
+        { name: "⚡ 能量塔废墟", symbol: "⚡", combatWaves: 1, desc: "遭遇守护者", reward: (p) => { p.addResource("电子元件", 10); p.addResource("化学品", 5); p.addLog("能量核心碎片。", true); } }
+    ];
+
+    // 全局状态
+    let gameOver = false;
+    let inCombat = false;
+    let currentMonster = null;
+    let monsterGrid = Array(MAP_SIZE).fill().map(() => Array(MAP_SIZE).fill(null));
+    let buildingGrid = Array(MAP_SIZE).fill().map(() => Array(MAP_SIZE).fill(null));
+    let player = { x: 0, y: 0, hp: 35, maxHp: 35, baseAtk: 8, def: 2 };
+    let resources = {};
+    let settlers = 0;
+    let timeHours = 0;
+    let builtFacilities = [];
+    let ownedWeapons = [];   // 存储武器id
+    let equippedWeaponId = null;
+    let logEntries = [];
+
+    // 连续战斗状态
+    let activeBuildingCombat = null; // { building, currentWave, totalWaves, rewardsCallback }
+    let buildingCombatActive = false;
+
+    // 辅助函数
+    function addLog(msg, isGood=false) {
+        logEntries.unshift(`[${timeHours}h] ${msg}`);
+        if(logEntries.length>50) logEntries.pop();
+        const logDiv = document.getElementById("logPanel");
+        logDiv.innerHTML = logEntries.map(m => `<div class="log-entry ${isGood?'good':''}">${m}</div>`).join('');
+    }
+
+    function addResource(res, amount) {
+        if(!resources[res]) resources[res]=0;
+        resources[res] += amount;
+        if(resources[res]<0) resources[res]=0;
+    }
+
+    function getTotalAttack() {
+        let bonus = 0;
+        if(equippedWeaponId) {
+            let weapon = WEAPONS.find(w=>w.id===equippedWeaponId);
+            if(weapon) bonus = weapon.atkBonus;
+        }
+        return player.baseAtk + bonus;
+    }
+
+    // 刷新UI
+    function refreshUI() {
+        document.getElementById("hpText").innerHTML = `${player.hp}/${player.maxHp}`;
+        let percent = (player.hp/player.maxHp)*100;
+        document.getElementById("hpFill").style.width = `${percent}%`;
+        document.getElementById("baseAtk").innerText = player.baseAtk;
+        document.getElementById("totalAtk").innerText = getTotalAttack();
+        document.getElementById("defVal").innerText = player.def;
+        document.getElementById("settlerCount").innerText = settlers;
+        document.getElementById("timeHour").innerText = timeHours;
+        document.getElementById("coordX").innerText = player.x;
+        document.getElementById("coordY").innerText = player.y;
+        document.getElementById("facilityCount").innerText = builtFacilities.length;
+
+        // 资源面板
+        const resPanel = document.getElementById("resourcePanel");
+        resPanel.innerHTML = "";
+        for(let r of RESOURCES) {
+            let val = resources[r] || 0;
+            resPanel.innerHTML += `<div class="res-item"><span>${r}</span><span>${Math.floor(val)}</span></div>`;
+        }
+
+        // 武器列表
+        const weaponDiv = document.getElementById("weaponList");
+        weaponDiv.innerHTML = "";
+        for(let w of WEAPONS) {
+            let has = ownedWeapons.includes(w.id);
+            if(has) {
+                let btn = document.createElement("button");
+                btn.innerText = (equippedWeaponId === w.id) ? "✅ 已装备" : "⚔️ 装备";
+                btn.onclick = () => equipWeapon(w.id);
+                let span = document.createElement("span");
+                span.innerText = `${w.name} +${w.atkBonus}攻`;
+                let container = document.createElement("div");
+                container.className = "weapon-item";
+                container.appendChild(span);
+                container.appendChild(btn);
+                weaponDiv.appendChild(container);
+            }
+        }
+        if(ownedWeapons.length===0) weaponDiv.innerHTML = "<span style='font-size:11px'>暂无武器，点击「制作武器」</span>";
+
+        // 设施列表渲染
+        const facilityDiv = document.getElementById("facilityList");
+        facilityDiv.innerHTML = "";
+        FACILITIES.forEach(f => {
+            let isBuilt = builtFacilities.includes(f.id);
+            let btn = document.createElement("button");
+            btn.innerText = isBuilt ? "✅ 已建" : "🏗️ 建造";
+            btn.disabled = isBuilt || gameOver;
+            if(!isBuilt) btn.onclick = () => buildFacility(f);
+            let costStr = Object.entries(f.cost).map(([k,v])=>`${k} ${v}`).join(", ");
+            let itemDiv = document.createElement("div");
+            itemDiv.className = "facility-item";
+            itemDiv.innerHTML = `<span><strong>${f.name}</strong><span style="font-size:9px;"> ${f.effect}</span><br><span style="font-size:9px;">💰 ${costStr}</span></span>`;
+            itemDiv.appendChild(btn);
+            facilityDiv.appendChild(itemDiv);
+        });
+
+        // 战斗面板按钮状态
+        const attackBtn = document.getElementById("attackBtn");
+        const fleeBtn = document.getElementById("fleeBtn");
+        if(inCombat && currentMonster && !gameOver && !buildingCombatActive){
+            attackBtn.disabled = false;
+            fleeBtn.disabled = false;
+            document.getElementById("combatInfo").innerHTML = `⚠️ 战斗: ${currentMonster.name} ❤️${currentMonster.hp} ⚔️${currentMonster.atk}`;
+        } else {
+            attackBtn.disabled = true;
+            fleeBtn.disabled = true;
+            if(buildingCombatActive) document.getElementById("combatInfo").innerHTML = `🏚️ 连续战斗 第${activeBuildingCombat?.currentWave}/${activeBuildingCombat?.totalWaves}波`;
+            else if(!inCombat) document.getElementById("combatInfo").innerHTML = "✅ 安全区域";
+            else if(gameOver) document.getElementById("combatInfo").innerHTML = "💀 已死亡";
+        }
+    }
+
+    // 战斗逻辑
+    function playerAttack() {
+        if(!inCombat || !currentMonster || gameOver) return;
+        let totalAtk = getTotalAttack();
+        let dmg = Math.max(1, totalAtk - currentMonster.def + Math.floor(Math.random()*5));
+        currentMonster.hp -= dmg;
+        addLog(`⚔️ 你对 ${currentMonster.name} 造成 ${dmg} 伤害!`, true);
+        if(currentMonster.hp <= 0){
+            // 胜利掉落
+            let drops = currentMonster.drops;
+            for(let [res, range] of Object.entries(drops)){
+                let amount = range[0] + Math.floor(Math.random() * (range[1]-range[0]+1));
+                addResource(res, amount);
+                addLog(`🎁 获得 ${res} x${amount}`, true);
+            }
+            addLog(`🏆 击败 ${currentMonster.name} ！`, true);
+            // 如果是建筑连续战斗
+            if(buildingCombatActive){
+                activeBuildingCombat.currentWave++;
+                if(activeBuildingCombat.currentWave <= activeBuildingCombat.totalWaves){
+                    // 生成下一波怪物
+                    spawnNextWaveMonster();
+                    refreshUI();
+                    drawMap();
+                    return;
+                } else {
+                    // 连续战斗结束
+                    addLog(`✨ 完成连续战斗！获得最终奖励。`, true);
+                    if(activeBuildingCombat.rewardsCallback) activeBuildingCombat.rewardsCallback(this);
+                    buildingCombatActive = false;
+                    activeBuildingCombat = null;
+                    // 清除建筑标记
+                    let building = buildingGrid[player.x][player.y];
+                    if(building && building.combatWaves>0) buildingGrid[player.x][player.y] = null; // 建筑被清空
+                    inCombat = false;
+                    currentMonster = null;
+                    refreshUI();
+                    drawMap();
+                    return;
+                }
+            } else {
+                // 普通怪物战斗胜利
+                monsterGrid[player.x][player.y] = null;
+                inCombat = false;
+                currentMonster = null;
+                refreshUI();
+                drawMap();
+                return;
+            }
+        }
+        // 怪物反击
+        let monDmg = Math.max(1, currentMonster.atk - player.def + Math.floor(Math.random()*4));
+        player.hp -= monDmg;
+        addLog(`💢 ${currentMonster.name} 反击造成 ${monDmg} 伤害!`, false);
+        if(player.hp <= 0){
+            gameOver = true;
+            inCombat = false;
+            buildingCombatActive = false;
+            addLog(`💀 你倒在了废土... 游戏结束`, false);
+        }
+        refreshUI();
+        drawMap();
+    }
+
+    function spawnNextWaveMonster() {
+        // 从怪物库随机生成一个略强的怪物
+        let idx = Math.floor(Math.random() * MONSTER_DB.length);
+        let base = MONSTER_DB[idx];
+        let wave = activeBuildingCombat.currentWave;
+        let bonusHp = wave * 3;
+        let monster = { ...base, hp: base.hp + bonusHp, atk: base.atk + Math.floor(wave/2), def: base.def };
+        currentMonster = monster;
+        inCombat = true;
+        addLog(`🐉 连续战斗第${wave}波: ${monster.name} 出现了!`, false);
+    }
+
+    function fleeCombat() {
+        if(!inCombat) return;
+        addLog(`🏃‍♂️ 你逃跑了，丢失了一些物资`, false);
+        addResource("食物", -3);
+        addResource("水", -2);
+        if(buildingCombatActive){
+            buildingCombatActive = false;
+            activeBuildingCombat = null;
+            addLog(`连续战斗中断，建筑未被探索`, false);
+        }
+        inCombat = false;
+        currentMonster = null;
+        refreshUI();
+        drawMap();
+    }
+
+    // 移动逻辑
+    function tryMove(dx,dy){
+        if(gameOver){ addLog("游戏已结束"); return; }
+        if(inCombat){ addLog("战斗中无法移动!"); return; }
+        let nx = player.x + dx, ny = player.y + dy;
+        if(nx<0 || nx>=MAP_SIZE || ny<0 || ny>=MAP_SIZE) return;
+        advanceTime(1);
+        player.x = nx; player.y = ny;
+        // 检查建筑连续战斗触发
+        let buildingHere = buildingGrid[nx][ny];
+        if(buildingHere && buildingHere.combatWaves > 0){
+            addLog(`🏚️ 发现 ${buildingHere.name}，触发连续战斗！`, false);
+            activeBuildingCombat = {
+                building: buildingHere,
+                currentWave: 1,
+                totalWaves: buildingHere.combatWaves,
+                rewardsCallback: buildingHere.reward
+            };
+            buildingCombatActive = true;
+            spawnNextWaveMonster();
+            refreshUI();
+            drawMap();
+            return;
+        }
+        // 普通怪物
+        let monsterHere = monsterGrid[nx][ny];
+        if(monsterHere && !gameOver){
+            inCombat = true;
+            currentMonster = { ...monsterHere };
+            addLog(`⚠️ 遭遇 ${currentMonster.name} ! 进入战斗`, false);
+        } else if(buildingHere && buildingHere.combatWaves===0){
+            buildingHere.reward(this);
+            buildingGrid[nx][ny] = null; // 建筑探索后消失
+            addLog(`探索 ${buildingHere.name} 获得补给`, true);
+        }
+        refreshUI();
+        drawMap();
+    }
+
+    function advanceTime(hours){
+        if(gameOver) return;
+        timeHours += hours;
+        let prodTrigger = Math.floor(timeHours / 8) - Math.floor((timeHours-hours)/8);
+        if(prodTrigger>0){
+            for(let id of builtFacilities){
+                let fac = FACILITIES.find(f=>f.id===id);
+                if(!fac) continue;
+                if(fac.id === "tent") { addResource("食物",2); addLog("⛺ 帐篷产出食物+2",true); }
+                if(fac.id === "farm") { addResource("食物",5); }
+                if(fac.id === "well") { addResource("水",4); }
+                if(fac.id === "recycler") { addResource("废金属",3); addResource("混凝土",1); }
+                if(fac.id === "distillery") { addResource("燃油",2); }
+                if(fac.id === "greenhouse") { addResource("食物",6); addResource("药品",1); }
+                if(fac.id === "scrap_mine") { addResource("废金属",5); }
+                if(fac.id === "chem_lab") { addResource("化学品",3); addResource("弹药",1); }
+                if(fac.id === "infirmary") { player.hp = Math.min(player.maxHp, player.hp+2); addLog("🏥 医疗站恢复了2生命",true); }
+                if(fac.id === "hospital") { player.hp = Math.min(player.maxHp, player.hp+5); }
+            }
+            if(settlers>0){
+                let foodGain = 1 + Math.floor(settlers/3);
+                addResource("食物", foodGain);
+                addLog(`👥 ${settlers}名游民采集了食物+${foodGain}`,true);
+            }
+        }
+        if(Math.random()<0.25) triggerRandomEvent();
+        refreshUI();
+    }
+
+    function triggerRandomEvent(){
+        let events = [
+            { txt:"沙尘暴来袭，损失部分食物和水", act:()=>{ addResource("食物",-3); addResource("水",-4); } },
+            { txt:"拾荒者交易，获得随机物资", act:()=>{ let r=RESOURCES[Math.floor(Math.random()*RESOURCES.length)]; addResource(r,5); addLog(`获得 ${r}+5`,true); } },
+            { txt:"变异野兽袭击，受到5伤害", act:()=>{ player.hp = Math.max(0,player.hp-5); if(player.hp<=0) gameOver=true; } },
+            { txt:"发现旧仓库，获得废金属和电子元件", act:()=>{ addResource("废金属",8); addResource("电子元件",4); } },
+            { txt:"流浪者加入营地！", act:()=>{ settlers++; addLog("一位游民加入了基地!",true); } }
+        ];
+        let e = events[Math.floor(Math.random()*events.length)];
+        addLog(`✨ 随机事件: ${e.txt}`, false);
+        e.act();
+        if(player.hp<=0) gameOver=true;
+        refreshUI();
+    }
+
+    function buildFacility(fac){
+        if(gameOver) return;
+        for(let [mat, cost] of Object.entries(fac.cost)){
+            if((resources[mat]||0) < cost){ addLog(`资源不足: 缺少 ${mat} ${cost}`, false); return; }
+        }
+        for(let [mat, cost] of Object.entries(fac.cost)) resources[mat] -= cost;
+        builtFacilities.push(fac.id);
+        if(fac.id === "tent") { player.maxHp +=5; player.hp +=5; }
+        if(fac.id === "guardpost") player.def +=2;
+        if(fac.id === "barracks") player.baseAtk +=2;
+        if(fac.id === "armory") player.baseAtk +=2;
+        if(fac.id === "shelter") { player.maxHp +=10; player.hp +=10; }
+        addLog(`🏗️ 建造了 ${fac.name}！`, true);
+        refreshUI();
+    }
+
+    function recruitSettler(){
+        if((resources["食物"]||0)>=20 && (resources["水"]||0)>=15){
+            resources["食物"] -= 20; resources["水"] -= 15;
+            settlers++;
+            addLog("👥 一名游民加入你的营地！", true);
+            refreshUI();
+        } else addLog("资源不足: 需要食物20和水15", false);
+    }
+
+    function craftWeapon(){
+        if(gameOver) return;
+        // 简单制作: 选择第一个未拥有的武器
+        let available = WEAPONS.filter(w=>!ownedWeapons.includes(w.id));
+        if(available.length===0){ addLog("你已经拥有所有武器！", false); return; }
+        let weapon = available[0];
+        for(let [mat, cost] of Object.entries(weapon.cost)){
+            if((resources[mat]||0) < cost){ addLog(`缺少 ${mat} ${cost} 无法制作`, false); return; }
+        }
+        for(let [mat, cost] of Object.entries(weapon.cost)) resources[mat] -= cost;
+        ownedWeapons.push(weapon.id);
+        addLog(`🔨 制作了 ${weapon.name}！攻击力+${weapon.atkBonus}`, true);
+        if(!equippedWeaponId) equipWeapon(weapon.id);
+        refreshUI();
+    }
+
+    function equipWeapon(weaponId){
+        if(ownedWeapons.includes(weaponId)){
+            equippedWeaponId = weaponId;
+            addLog(`⚔️ 装备了 ${WEAPONS.find(w=>w.id===weaponId).name}`, true);
+            refreshUI();
+        }
+    }
+
+    // 初始化世界
+    function initWorld(){
+        for(let i=0;i<MAP_SIZE;i++){
+            for(let j=0;j<MAP_SIZE;j++){
+                monsterGrid[i][j]=null;
+                buildingGrid[i][j]=null;
+            }
+        }
+        // 生成怪物
+        for(let i=0;i<MAP_SIZE;i++){
+            for(let j=0;j<MAP_SIZE;j++){
+                if(i===0 && j===0) continue;
+                if(Math.random()<0.35){
+                    let idx = Math.floor(Math.random() * MONSTER_DB.length);
+                    let m = { ...MONSTER_DB[idx], hp: MONSTER_DB[idx].hp + Math.floor(Math.random()*6)-2 };
+                    if(m.hp<5) m.hp=8;
+                    monsterGrid[i][j] = m;
+                }
+            }
+        }
+        // 生成随机建筑
+        for(let i=0;i<MAP_SIZE;i++){
+            for(let j=0;j<MAP_SIZE;j++){
+                if(i===0 && j===0) continue;
+                if(!monsterGrid[i][j] && Math.random()<0.2){
+                    let b = { ...BUILDINGS[Math.floor(Math.random()*BUILDINGS.length)] };
+                    buildingGrid[i][j] = b;
+                }
+            }
+        }
+    }
+
+    function resetGame(){
+        gameOver = false;
+        inCombat = false;
+        buildingCombatActive = false;
+        currentMonster = null;
+        activeBuildingCombat = null;
+        player = { x: 0, y: 0, hp: 35, maxHp: 35, baseAtk: 8, def: 2 };
+        resources = {};
+        RESOURCES.forEach(r=>resources[r]= (r==="食物"?25:r==="水"?20:5));
+        resources["废金属"]=15; resources["木头"]=12; resources["布料"]=8;
+        settlers = 0;
+        timeHours = 0;
+        builtFacilities = [];
+        ownedWeapons = [];
+        equippedWeaponId = null;
+        logEntries = [];
+        initWorld();
+        addLog("🌍 废土重启！探索30x30世界，制造武器，挑战连续战斗建筑！", true);
+        refreshUI();
+        drawMap();
+    }
+
+    // 绘图
+    function drawMap() {
+        const canvas = document.getElementById("mapCanvas");
+        const ctx = canvas.getContext("2d");
+        canvas.width = CANVAS_SIZE; canvas.height = CANVAS_SIZE;
+        ctx.clearRect(0,0,CANVAS_SIZE,CANVAS_SIZE);
+        for(let i=0;i<MAP_SIZE;i++){
+            for(let j=0;j<MAP_SIZE;j++){
+                let x=j*CELL_SIZE, y=i*CELL_SIZE;
+                ctx.fillStyle = (i===player.x && j===player.y) ? "#3a542a" : "#1f3820";
+                ctx.fillRect(x,y,CELL_SIZE-1,CELL_SIZE-1);
+                ctx.strokeStyle = "#5c7840";
+                ctx.strokeRect(x,y,CELL_SIZE-1,CELL_SIZE-1);
+                ctx.font = `${CELL_SIZE*0.5}px monospace`;
+                ctx.fillStyle = "#f3e0b0";
+                if(i===player.x && j===player.y) ctx.fillText("@", x+CELL_SIZE*0.3, y+CELL_SIZE*0.7);
+                else if(monsterGrid[i][j]) ctx.fillText(monsterGrid[i][j].code, x+CELL_SIZE*0.3, y+CELL_SIZE*0.7);
+                else if(buildingGrid[i][j]) ctx.fillText(buildingGrid[i][j].symbol, x+CELL_SIZE*0.3, y+CELL_SIZE*0.7);
+                else ctx.fillText("·", x+CELL_SIZE*0.4, y+CELL_SIZE*0.7);
+            }
+        }
+    }
+
+    // 事件绑定
+    function bindEvents(){
+        const canvas = document.getElementById("mapCanvas");
+        canvas.addEventListener("click", (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const mouseX = (e.clientX - rect.left) * scaleX;
+            const mouseY = (e.clientY - rect.top) * scaleY;
+            const col = Math.floor(mouseX / CELL_SIZE);
+            const row = Math.floor(mouseY / CELL_SIZE);
+            if(row>=0 && row<MAP_SIZE && col>=0 && col<MAP_SIZE){
+                let dx = row - player.x, dy = col - player.y;
+                if(Math.abs(dx)+Math.abs(dy)===1) tryMove(dx,dy);
+                else addLog("只能移动到相邻格子", false);
+            }
+        });
+        document.getElementById("attackBtn").onclick = playerAttack;
+        document.getElementById("fleeBtn").onclick = fleeCombat;
+        document.getElementById("recruitBtn").onclick = recruitSettler;
+        document.getElementById("nextTurnBtn").onclick = ()=>{ if(!inCombat && !gameOver) advanceTime(8); else addLog("战斗中无法等待",false); };
+        document.getElementById("craftWeaponBtn").onclick = craftWeapon;
+        document.getElementById("resetBtn").onclick = resetGame;
+    }
+
+    resetGame();
+    bindEvents();
+    drawMap();
+    setInterval(()=>{ if(!gameOver && !inCombat) drawMap(); }, 500);
+</script>
+</body>
+</html>
